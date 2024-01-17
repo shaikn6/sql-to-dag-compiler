@@ -1,0 +1,5 @@
+sqlparse==0.4.2
+Jinja2==3.0.3
+networkx==2.7.1
+pytest==7.1.2
+pytest-cov==3.0.0
