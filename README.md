@@ -1,3 +1,8 @@
+> 🔒 **Private Repository** — Source code available on request for verified employers and collaborators.
+> 📧 Contact: shaikn6@udayton.edu | [LinkedIn](https://linkedin.com/in/nagizaazshaik)
+
+---
+
 # sql-to-dag-compiler
 
 ![Python](https://img.shields.io/badge/python-3.9%2B-blue)
@@ -6,6 +11,19 @@
 ![Tests](https://img.shields.io/badge/tests-74%20passing-success)
 
 **Automatically converts Oracle SQL / PLSQL stored procedures into production-ready Apache Airflow 2.x DAGs with correct task ordering derived from table-level data lineage.**
+
+---
+
+## Screenshots
+
+### Pipeline Architecture
+![Pipeline Overview](docs/screenshots/pipeline_overview.png)
+
+### Generated DAG Structure
+![DAG Output](docs/screenshots/dag_output.png)
+
+### Table Dependency Graph
+![Dependency Graph](docs/screenshots/dependency_graph.png)
 
 ---
 
