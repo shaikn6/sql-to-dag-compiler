@@ -7,22 +7,48 @@
 
 ![Python](https://img.shields.io/badge/python-3.9%2B-blue)
 ![Airflow](https://img.shields.io/badge/Apache%20Airflow-2.x-brightgreen)
+![dbt](https://img.shields.io/badge/dbt-model%20generation-orange)
+![pyvis](https://img.shields.io/badge/pyvis-interactive%20lineage-purple)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey)
-![Tests](https://img.shields.io/badge/tests-74%20passing-success)
+![Tests](https://img.shields.io/badge/tests-104%20passing-success)
 
-**Automatically converts Oracle SQL / PLSQL stored procedures into production-ready Apache Airflow 2.x DAGs with correct task ordering derived from table-level data lineage.**
+**V2: Oracle SQL / PLSQL → Apache Airflow 2.x DAGs + dbt model files + interactive lineage graph + column-level impact analysis.**
+
+---
+
+## V2 Feature Highlights
+
+| Feature | Module | Description |
+|---------|--------|-------------|
+| dbt model compiler | `dbt_compiler/dbt_generator.py` | Parses CTEs → dbt YAML + SQL + sources.yml |
+| Impact analysis | `lineage/impact_analyzer.py` | Blast radius, what-if rename, breaking change diff |
+| Interactive lineage | `lineage/viz_generator.py` | pyvis HTML graph, clickable nodes |
+| Column tracer | `lineage/column_tracer.py` | Trace column through 5+ CTE hops |
+| Streamlit V2 | `dashboard/app_v2.py` | 4-tab dashboard: DAG / dbt / lineage / impact |
 
 ---
 
 ## Screenshots
 
-### Pipeline Architecture
+### V2 — dbt Model Output
+![dbt Model Output](docs/screenshots/v2_dbt_model_output.png)
+
+### V2 — Interactive Lineage Graph (15+ nodes)
+![Lineage Graph](docs/screenshots/v2_lineage_graph.png)
+
+### V2 — Impact Analysis (Blast Radius)
+![Impact Analysis](docs/screenshots/v2_impact_analysis.png)
+
+### V2 — Column Lineage Trace (5 CTEs)
+![Column Trace](docs/screenshots/v2_column_trace.png)
+
+### V1 — Pipeline Architecture
 ![Pipeline Overview](docs/screenshots/pipeline_overview.png)
 
-### Generated DAG Structure
+### V1 — Generated DAG Structure
 ![DAG Output](docs/screenshots/dag_output.png)
 
-### Table Dependency Graph
+### V1 — Table Dependency Graph
 ![Dependency Graph](docs/screenshots/dependency_graph.png)
 
 ---
@@ -184,17 +210,84 @@ with DAG(
 
 ---
 
+## V2 Usage
+
+### dbt Model Generation
+
+```python
+from dbt_compiler.dbt_generator import compile_sql_to_dbt, write_dbt_project
+
+result = compile_sql_to_dbt(sql_text)
+written = write_dbt_project(result, output_dir="dbt_output/")
+# Writes: models/staging/*.sql, models/marts/*.sql, schema.yml, sources.yml
+```
+
+### Impact Analysis
+
+```python
+from lineage.impact_analyzer import ImpactAnalyzer
+
+analyzer = ImpactAnalyzer(sql_text)
+impact = analyzer.analyze("amount")
+print(f"Blast radius: {impact.blast_radius}")
+print(f"Critical path: {impact.critical_path}")
+
+changes = analyzer.what_if_rename("amount", "total_amount")
+diff = analyzer.breaking_changes(sql_v1, sql_v2)
+```
+
+### Interactive Lineage Graph
+
+```python
+from lineage.viz_generator import generate_lineage_html
+
+html = generate_lineage_html(sql_text, "docs/lineage_graph.html")
+# Open lineage_graph.html in a browser — clickable, zoomable pyvis graph
+```
+
+### Column Tracer
+
+```python
+from lineage.column_tracer import trace_column
+
+lineage = trace_column(sql_text, "amount")
+for step in lineage.path:
+    print(f"{step.model_name}: {step.input_col} --[{step.transformation}]--> {step.output_col}")
+```
+
+### Streamlit Dashboard (V2)
+
+```bash
+streamlit run dashboard/app_v2.py
+```
+
+Opens a 4-tab UI: DAG Preview / dbt Models / Lineage Explorer / Impact Analysis.
+
+---
+
 ## Architecture
 
 See [docs/architecture.md](docs/architecture.md) for the full component breakdown.
 
 ```
-sql_to_dag/
-├── parser.py          # SQL/PLSQL parsing (sqlparse + regex)
-├── graph.py           # Dependency graph (networkx)
-├── generator.py       # DAG renderer (Jinja2) + CLI
+sql_to_dag/              # V1 — Oracle SQL → Airflow DAG
+├── parser.py
+├── graph.py
+├── generator.py
 └── templates/
-    └── dag_template.py.j2   # Airflow 2.x DAG template
+    └── dag_template.py.j2
+
+dbt_compiler/            # V2 — SQL → dbt artefacts
+└── dbt_generator.py
+
+lineage/                 # V2 — lineage intelligence
+├── column_tracer.py     # trace column through CTE hops
+├── impact_analyzer.py   # blast radius, what-if rename, breaking changes
+└── viz_generator.py     # pyvis interactive HTML graph
+
+dashboard/
+├── app_v2.py            # Streamlit V2 (4 tabs)
+└── (app.py from V1 preserved)
 ```
 
 ---
@@ -202,10 +295,18 @@ sql_to_dag/
 ## Running Tests
 
 ```bash
-pytest tests/ -v --cov=sql_to_dag --cov-report=term-missing
+# V1 tests
+pytest tests/test_parser.py tests/test_graph.py tests/test_generator.py -v
+
+# V2 tests
+pytest tests/test_v2_dbt_generator.py tests/test_v2_impact_analyzer.py \
+       tests/test_v2_column_tracer.py tests/test_v2_viz_generator.py -v
+
+# All 104 tests
+pytest tests/ -v --cov=sql_to_dag --cov=dbt_compiler --cov=lineage --cov-report=term-missing
 ```
 
-74 tests covering parser, graph, and generator. All pass.
+104 tests (74 V1 + 30 V2). All pass.
 
 ---
 
