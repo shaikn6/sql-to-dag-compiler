@@ -338,6 +338,120 @@ def execute_sql(task_id: str, **context) -> None:
 
 ---
 
+---
+
+## V2 Extensions
+
+V2 adds three new modules under `src/`:
+
+```
+src/
+├── dbt_parser.py        # dbt model parser → Airflow DAG generator
+├── edge_case_handler.py # Complex SQL pattern detection + preprocessing
+└── lineage_report.py    # Lineage graph export (Mermaid, DOT, JSON)
+```
+
+### dbt Model Parser
+
+Parses dbt model SQL and generates Airflow DAGs where each model becomes a
+`BashOperator` running `dbt run --select {model_name}`:
+
+```python
+from src.dbt_parser import DbtModelParser
+
+parser = DbtModelParser()
+
+# Parse a single model
+model = parser.parse_model(sql_text, model_name="fct_orders")
+print(model.deps)            # ['stg_orders', 'stg_customers']
+print(model.sources)         # [('raw', 'events')]
+print(model.materialization) # 'incremental'
+print(model.is_incremental)  # True
+
+# Parse an entire project directory
+project = parser.parse_project("models/")
+
+# Generate an Airflow DAG
+dag_source = parser.to_airflow_dag(project, dag_id="dbt_pipeline")
+```
+
+Supported dbt Jinja2 features:
+- `{{ ref('model') }}` — inter-model dependencies
+- `{{ source('schema', 'table') }}` — external source references
+- `{{ config(materialized='table'|'view'|'incremental'|'ephemeral') }}`
+- `{% if is_incremental() %}` — incremental logic detection
+
+### Edge-Case SQL Handler
+
+Detects and preprocesses complex SQL patterns before main parsing:
+
+```python
+from src.edge_case_handler import EdgeCaseHandler
+
+handler = EdgeCaseHandler()
+
+# Detect patterns
+patterns = handler.detect_patterns(sql)
+for p in patterns:
+    print(p.pattern_type, p.location, p.complexity_score)
+
+# Preprocess (strip comments, normalize, emit warnings)
+cleaned_sql, warnings = handler.preprocess(sql)
+for w in warnings:
+    print(f"[{w.code}] line {w.line}: {w.message}")
+
+# Extract CTE dependency order
+cte_names = handler.extract_cte_dependencies(sql)
+```
+
+Detected patterns: CTEs, recursive CTEs (`WITH RECURSIVE`, `CONNECT BY`),
+MERGE, dynamic SQL (`EXECUTE IMMEDIATE`, `sp_executesql`), OUT parameters,
+window functions, PIVOT/UNPIVOT, lateral joins.
+
+### Lineage Report Generator
+
+Export a `networkx.DiGraph` dependency graph in three formats:
+
+```python
+import networkx as nx
+from src.lineage_report import LineageReportGenerator
+
+dag = nx.DiGraph()
+dag.add_edges_from([("orders", "revenue"), ("customers", "revenue")])
+
+gen = LineageReportGenerator(dag)
+
+print(gen.mermaid())       # flowchart LR diagram
+print(gen.dot())           # Graphviz DOT format
+print(gen.json_string())   # JSON adjacency list
+```
+
+Or use the standalone functions:
+
+```python
+from src.lineage_report import generate_mermaid, generate_dot, generate_json
+
+mermaid_str = generate_mermaid(dag)   # starts with "flowchart LR"
+dot_str     = generate_dot(dag)       # starts with "digraph {"
+json_dict   = generate_json(dag)      # {"nodes": [...], "edges": [...]}
+```
+
+### V2 Tests
+
+```bash
+pytest tests/test_v2.py -v
+```
+
+62 tests covering all V2 modules — all passing.
+
+---
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for version history.
+
+---
+
 ## License
 
 MIT
