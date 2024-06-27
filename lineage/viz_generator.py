@@ -25,6 +25,9 @@ from typing import Any
 
 import networkx as nx
 
+# Maximum SQL input size to prevent DoS via unbounded regex on huge inputs
+_MAX_SQL_BYTES = 5 * 1024 * 1024
+
 try:
     from pyvis.network import Network
     _PYVIS_AVAILABLE = True
@@ -119,6 +122,12 @@ def generate_lineage_html(
     str
         HTML content of the generated graph.
     """
+    if len(sql.encode("utf-8")) > _MAX_SQL_BYTES:
+        raise ValueError(
+            f"SQL input is too large. Maximum allowed: "
+            f"{_MAX_SQL_BYTES // 1_048_576} MB."
+        )
+
     nodes, graph = _build_lineage_graph(sql, dag_tasks or [])
 
     if _PYVIS_AVAILABLE:
@@ -280,13 +289,18 @@ def _render_pyvis(
     for node_name, node in nodes.items():
         color = _COLOR.get(node.node_type, "#888888")
         shape = _SHAPE.get(node.node_type, "ellipse")
+        # Escape user-derived content before embedding in HTML tooltip to
+        # prevent XSS if the generated HTML file is opened in a browser.
+        safe_name = _html_escape(node_name)
+        safe_type = _html_escape(node.node_type)
+        safe_snippet = _html_escape(node.sql_snippet[:200])
         tooltip = (
-            f"<b>{node_name}</b><br>"
-            f"Type: {node.node_type}<br>"
+            f"<b>{safe_name}</b><br>"
+            f"Type: {safe_type}<br>"
             f"Columns: {node.column_count}<br>"
             f"Upstream: {len(node.upstream)}<br>"
             f"Downstream: {len(node.downstream)}<br>"
-            f"<hr><code>{node.sql_snippet[:200]}</code>"
+            f"<hr><code>{safe_snippet}</code>"
         )
         net.add_node(
             node_name,
@@ -349,12 +363,15 @@ def _render_fallback_html(
     rows = []
     for node_name, node in nodes.items():
         color = _COLOR.get(node.node_type, "#888")
-        upstream_str = ", ".join(node.upstream) or "—"
-        downstream_str = ", ".join(node.downstream) or "—"
+        # Escape all user-derived content before embedding in HTML.
+        safe_node_name = _html_escape(node_name)
+        safe_node_type = _html_escape(node.node_type)
+        upstream_str = _html_escape(", ".join(node.upstream)) or "—"
+        downstream_str = _html_escape(", ".join(node.downstream)) or "—"
         rows.append(
             f'<tr style="border-bottom:1px solid #333">'
-            f'<td style="padding:8px;color:{color}"><b>{node_name}</b></td>'
-            f'<td style="padding:8px">{node.node_type}</td>'
+            f'<td style="padding:8px;color:{color}"><b>{safe_node_name}</b></td>'
+            f'<td style="padding:8px">{safe_node_type}</td>'
             f'<td style="padding:8px">{node.column_count}</td>'
             f'<td style="padding:8px">{upstream_str}</td>'
             f'<td style="padding:8px">{downstream_str}</td>'
@@ -399,6 +416,18 @@ def _render_fallback_html(
 # ---------------------------------------------------------------------------
 # Utility
 # ---------------------------------------------------------------------------
+
+def _html_escape(text: str) -> str:
+    """Escape HTML special characters to prevent XSS in generated HTML output."""
+    return (
+        text
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+        .replace("'", "&#x27;")
+    )
+
 
 def _extract_target(sql: str) -> str | None:
     m = _CTAS_RE.search(sql)

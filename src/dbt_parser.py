@@ -15,11 +15,23 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 import textwrap
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+
+# ---------------------------------------------------------------------------
+# Security constants
+# ---------------------------------------------------------------------------
+
+# Maximum SQL input size per model file: 5 MB
+_MAX_SQL_BYTES = 5 * 1024 * 1024
+
+# dbt model names sourced from filenames must match this pattern before being
+# embedded in the generated Airflow BashOperator bash_command string.
+_SAFE_MODEL_NAME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]*$")
 
 
 # ---------------------------------------------------------------------------
@@ -144,7 +156,22 @@ class DbtModelParser:
         models: list[DbtModel] = []
         for sql_file in sorted(models_path.rglob("*.sql")):
             model_name = sql_file.stem
+            # Validate model name before embedding it in generated shell commands
+            # and Python source code.  Filenames containing shell metacharacters
+            # (e.g. semicolons, backticks, $(...)) would allow command injection
+            # into the BashOperator bash_command string.
+            if not _SAFE_MODEL_NAME_RE.match(model_name):
+                raise ValueError(
+                    f"Unsafe dbt model filename: {sql_file.name!r}. "
+                    f"Model names must match [a-zA-Z][a-zA-Z0-9_]*."
+                )
             sql_text = sql_file.read_text(encoding="utf-8")
+            # Reject oversized model files to prevent DoS via regex/parse churn.
+            if len(sql_text.encode("utf-8")) > _MAX_SQL_BYTES:
+                raise ValueError(
+                    f"Model file {sql_file.name!r} exceeds maximum allowed size "
+                    f"({_MAX_SQL_BYTES // 1_048_576} MB)."
+                )
             model = self.parse_model(sql_text, model_name)
             models.append(model)
 
@@ -256,9 +283,23 @@ class DbtModelParser:
         lines.append(") as dag:")
         lines.append("")
 
+        # Shell-quote the directory arguments so that paths containing spaces
+        # or special characters cannot break the bash_command string or inject
+        # additional shell commands.  shlex.quote wraps with single-quotes and
+        # escapes embedded single-quotes.
+        safe_profiles_dir = shlex.quote(dbt_profiles_dir)
+        safe_project_dir = shlex.quote(dbt_project_dir)
+
         # ---- task definitions ----
         model_by_name = {m.name: m for m in project.models}
         for model_name in topo_order:
+            # Re-validate inside the loop: the in-memory model list may have
+            # been constructed by paths outside parse_project.
+            if not _SAFE_MODEL_NAME_RE.match(model_name):
+                raise ValueError(
+                    f"Unsafe model name {model_name!r} cannot be embedded in "
+                    f"generated shell commands."
+                )
             model = model_by_name[model_name]
             var = task_var(model_name)
             mat_comment = f"  # materialized={model.materialization}"
@@ -266,11 +307,13 @@ class DbtModelParser:
                 mat_comment += ", incremental"
             lines.append(f"    {var} = BashOperator(")
             lines.append(f'        task_id="{model_name}",')
+            # Use shell-quoted directory args and a validated model name so the
+            # resulting bash_command cannot be exploited for command injection.
             lines.append(
                 f'        bash_command=('
                 f'"dbt run --select {model_name}'
-                f' --profiles-dir {dbt_profiles_dir}'
-                f' --project-dir {dbt_project_dir}"'
+                f' --profiles-dir {safe_profiles_dir}'
+                f' --project-dir {safe_project_dir}"'
                 f'),'
             )
             lines.append(f"    ){mat_comment}")

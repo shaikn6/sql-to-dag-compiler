@@ -30,6 +30,18 @@ import sqlparse
 from sqlparse import tokens as T
 from sqlparse.sql import Identifier, IdentifierList
 
+# ---------------------------------------------------------------------------
+# Security constants
+# ---------------------------------------------------------------------------
+
+# Maximum SQL input size: 5 MB
+_MAX_SQL_BYTES = 5 * 1024 * 1024
+
+# Safe identifier pattern for table names, schema names, and model names that
+# will be embedded inside dbt Jinja2 ref()/source() calls written to disk.
+# Single-quotes inside these values would break out of the ref('...') context.
+_SAFE_DBT_IDENTIFIER_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]*$")
+
 
 # ---------------------------------------------------------------------------
 # Data structures
@@ -55,9 +67,18 @@ class DbtModel:
 
     @property
     def dbt_sql(self) -> str:
-        """Return the dbt SQL with {{ ref() }} and {{ source() }} substitutions."""
+        """Return the dbt SQL with {{ ref() }} and {{ source() }} substitutions.
+
+        Security note: ref and source identifiers are validated to contain only
+        safe characters before being embedded.  A malicious table name like
+        ``') }}; __import__('os').system('...  `` would otherwise inject
+        arbitrary content into the written .sql dbt model files.
+        """
         sql = self.raw_sql
         for ref in self.model_refs:
+            # Skip refs with unsafe names — they cannot appear in ref() safely.
+            if not _SAFE_DBT_IDENTIFIER_RE.match(ref):
+                continue
             pattern = re.compile(
                 r"(?<!['\"])\b" + re.escape(ref) + r"\b(?!['\"])",
                 re.IGNORECASE,
@@ -68,6 +89,11 @@ class DbtModel:
             parts = src.split(".")
             if len(parts) == 2:
                 schema, tbl = parts
+                # Both schema and table names must be safe identifiers before
+                # being interpolated into the source() Jinja2 macro call.
+                if not (_SAFE_DBT_IDENTIFIER_RE.match(schema) and
+                        _SAFE_DBT_IDENTIFIER_RE.match(tbl)):
+                    continue
                 pattern = re.compile(
                     r"(?<!['\"])\b" + re.escape(src) + r"\b(?!['\"])",
                     re.IGNORECASE,
@@ -142,11 +168,30 @@ _COLNAME_RE = re.compile(r"(?:AS\s+)?(\w+)\s*$", re.IGNORECASE)
 # Public API
 # ---------------------------------------------------------------------------
 
+def _safe_resolve(base: Path, *parts: str) -> Path:
+    """
+    Resolve a path constructed from *base* / *parts* and verify it is inside
+    *base*.  Raises ValueError on path traversal attempts.
+    """
+    target = (base / Path(*parts)).resolve()
+    if not str(target).startswith(str(base)):
+        raise ValueError(
+            f"Path traversal detected: resolved path {target} is outside "
+            f"the output directory {base}."
+        )
+    return target
+
+
 def compile_sql_to_dbt(sql: str) -> DbtCompileResult:
     """
     Parse *sql* (may contain multiple statements) and return a DbtCompileResult
     containing model and source metadata.
     """
+    if len(sql.encode("utf-8")) > _MAX_SQL_BYTES:
+        raise ValueError(
+            f"SQL input is too large. Maximum allowed: "
+            f"{_MAX_SQL_BYTES // 1_048_576} MB."
+        )
     cleaned = _strip_comments(sql)
     raw_statements = sqlparse.split(cleaned)
 
@@ -168,8 +213,12 @@ def write_dbt_project(result: DbtCompileResult, output_dir: str) -> dict[str, st
     """
     Write dbt artefacts to *output_dir* and return a dict of
     ``{relative_path: file_content}`` for all written files.
+
+    Security: all output paths are resolved relative to *output_dir* and
+    checked to ensure they remain inside that directory, preventing path
+    traversal via malicious model names.
     """
-    base = Path(output_dir)
+    base = Path(output_dir).resolve()
     written: dict[str, str] = {}
 
     staging_models = [m for m in result.models if m.layer == "staging"]
@@ -177,35 +226,37 @@ def write_dbt_project(result: DbtCompileResult, output_dir: str) -> dict[str, st
 
     # Model SQL files
     for model in staging_models:
-        path = base / "models" / "staging" / f"{model.name}.sql"
+        rel = f"models/staging/{model.name}.sql"
+        path = _safe_resolve(base, rel)
         path.parent.mkdir(parents=True, exist_ok=True)
         content = _render_model_sql(model)
         path.write_text(content, encoding="utf-8")
-        written[f"models/staging/{model.name}.sql"] = content
+        written[rel] = content
 
     for model in mart_models:
-        path = base / "models" / "marts" / f"{model.name}.sql"
+        rel = f"models/marts/{model.name}.sql"
+        path = _safe_resolve(base, rel)
         path.parent.mkdir(parents=True, exist_ok=True)
         content = _render_model_sql(model)
         path.write_text(content, encoding="utf-8")
-        written[f"models/marts/{model.name}.sql"] = content
+        written[rel] = content
 
     # schema.yml per layer
     if staging_models:
-        schema_path = base / "models" / "staging" / "schema.yml"
+        schema_path = _safe_resolve(base, "models/staging/schema.yml")
         content = _render_schema_yml(staging_models)
         schema_path.write_text(content, encoding="utf-8")
         written["models/staging/schema.yml"] = content
 
     if mart_models:
-        schema_path = base / "models" / "marts" / "schema.yml"
+        schema_path = _safe_resolve(base, "models/marts/schema.yml")
         content = _render_schema_yml(mart_models)
         schema_path.write_text(content, encoding="utf-8")
         written["models/marts/schema.yml"] = content
 
     # sources.yml
     if result.sources:
-        sources_path = base / "sources.yml"
+        sources_path = _safe_resolve(base, "sources.yml")
         content = _render_sources_yml(result.sources)
         sources_path.write_text(content, encoding="utf-8")
         written["sources.yml"] = content
