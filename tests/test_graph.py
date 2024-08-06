@@ -1,4 +1,5 @@
 """Tests for sql_to_dag.graph — dependency graph construction and topological sort."""
+from __future__ import annotations
 
 import pytest
 import networkx as nx
