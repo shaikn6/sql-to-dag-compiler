@@ -1,0 +1,138 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sql-to-dag-compiler
+  namespace: data-engineering
+  labels:
+    app: sql-to-dag-compiler
+    component: api
+    version: "1.0.0"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: sql-to-dag-compiler
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: sql-to-dag-compiler
+        component: api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      serviceAccountName: sql-to-dag-sa
+      terminationGracePeriodSeconds: 30
+
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+
+      containers:
+        - name: compiler-api
+          image: ghcr.io/shaikn6/sql-to-dag-compiler:latest
+          imagePullPolicy: Always
+          command: ["uvicorn", "src.api.main:app"]
+          args:
+            - "--host"
+            - "0.0.0.0"
+            - "--port"
+            - "8000"
+            - "--workers"
+            - "4"
+          env:
+            - name: ENVIRONMENT
+              valueFrom:
+                configMapKeyRef:
+                  name: sql-dag-config
+                  key: environment
+            - name: AIRFLOW_API_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: sql-dag-config
+                  key: airflow_api_url
+            - name: AIRFLOW_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: sql-dag-secrets
+                  key: airflow_username
+            - name: AIRFLOW_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: sql-dag-secrets
+                  key: airflow_password
+            - name: DAG_OUTPUT_DIR
+              value: "/mnt/dags"
+            - name: SUPPORTED_DIALECTS
+              value: "postgresql,mysql,oracle,snowflake,bigquery,redshift"
+            - name: LOG_LEVEL
+              value: "INFO"
+          ports:
+            - name: http
+              containerPort: 8000
+            - name: metrics
+              containerPort: 9090
+          resources:
+            requests:
+              cpu: "500m"
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          volumeMounts:
+            - name: dag-output
+              mountPath: /mnt/dags
+            - name: tmp-dir
+              mountPath: /tmp
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+
+      volumes:
+        - name: dag-output
+          persistentVolumeClaim:
+            claimName: dag-output-pvc
+        - name: tmp-dir
+          emptyDir:
+            sizeLimit: 500Mi
+
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sql-to-dag-compiler-svc
+  namespace: data-engineering
+  labels:
+    app: sql-to-dag-compiler
+spec:
+  selector:
+    app: sql-to-dag-compiler
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+  type: ClusterIP
