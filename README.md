@@ -1,9 +1,13 @@
-> 🔒 **Private Repository** — Source code available on request for verified employers and collaborators.
-> 📧 Contact: shaikn6@udayton.edu | [LinkedIn](https://linkedin.com/in/nagizaazshaik)
 
 ---
 
 # sql-to-dag-compiler
+
+![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
+![License](https://img.shields.io/badge/License-MIT-22c55e)
+![Tests](https://img.shields.io/badge/Tests-passing-22c55e)
+![Stack](https://img.shields.io/badge/Stack-sqlparse-6366f1)
+
 
 ![Python](https://img.shields.io/badge/python-3.9%2B-blue)
 ![Airflow](https://img.shields.io/badge/Apache%20Airflow-2.x-brightgreen)
@@ -15,6 +19,16 @@
 **V2: Oracle SQL / PLSQL → Apache Airflow 2.x DAGs + dbt model files + interactive lineage graph + column-level impact analysis.**
 
 ---
+
+## Quick Start
+
+```bash
+git clone https://github.com/shaikn6/sql-to-dag-compiler.git
+cd sql-to-dag-compiler
+pip install -r requirements.txt
+pytest tests/                    # run test suite
+streamlit run dashboard/app_v2.py    # launch dashboard
+```
 
 ## V2 Feature Highlights
 
