@@ -1,0 +1,18 @@
+version: "3.8"
+
+services:
+  sql2dag:
+    build: .
+    volumes:
+      - ./examples:/app/examples
+      - ./output:/app/output
+    command: >
+      examples/sample_oracle.sql
+      --output output/generated_dag.py
+      --dag-id customer_summary_pipeline
+
+  test:
+    build: .
+    command: python -m pytest tests/ -v --cov=sql_to_dag --cov-report=term-missing
+    volumes:
+      - .:/app
