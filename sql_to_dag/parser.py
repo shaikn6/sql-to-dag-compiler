@@ -25,6 +25,10 @@ import sqlparse
 from sqlparse.sql import IdentifierList, Identifier, Where
 from sqlparse.tokens import Keyword, DML, DDL, Punctuation
 
+# Maximum SQL input size: 5 MB. Prevents memory exhaustion and ReDoS
+# amplification via sqlparse (see CVE-2023-30608).
+_MAX_SQL_BYTES = 5 * 1024 * 1024
+
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -39,6 +43,11 @@ def parse_sql_file(path: str) -> list[dict[str, Any]]:
 
 def parse_sql_string(sql_text: str) -> list[dict[str, Any]]:
     """Parse *sql_text* and return a list of statement metadata dicts."""
+    if len(sql_text.encode("utf-8")) > _MAX_SQL_BYTES:
+        raise ValueError(
+            f"SQL input exceeds maximum allowed size of "
+            f"{_MAX_SQL_BYTES // 1_048_576} MB. Split into smaller files."
+        )
     # Strip Oracle-style block comments and line comments, but keep the SQL.
     cleaned = _strip_plsql_block_delimiters(sql_text)
 
