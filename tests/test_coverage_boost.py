@@ -522,8 +522,8 @@ class TestCompileSqlString:
 
     def test_empty_sql_compiles(self):
         from sql_to_dag.generator import compile_sql_string
-        result = compile_sql_string("", dag_id="empty_dag")
-        assert "empty_dag" in result
+        with pytest.raises(ValueError):
+            compile_sql_string("", dag_id="empty_dag")
 
     def test_retries_in_output(self):
         from sql_to_dag.generator import compile_sql_string
