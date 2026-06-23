@@ -5,7 +5,7 @@ setup(
     version="1.0.0",
     description="Converts Oracle SQL/PLSQL stored procedures into Apache Airflow 2.x DAGs",
     author="Nagizaaz Shaik",
-    author_email="shaik.izaaz009@gmail.com",
+    author_email="nagizaazs@gmail.com",
     url="https://github.com/shaikn6/sql-to-dag-compiler",
     packages=find_packages(),
     include_package_data=True,
