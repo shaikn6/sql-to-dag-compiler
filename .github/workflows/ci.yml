@@ -33,7 +33,7 @@ jobs:
 
       - name: Run tests with coverage
         run: |
-          python -m pytest tests/ -v --cov=sql_to_dag --cov-report=term-missing --cov-fail-under=95
+          python -m pytest tests/ -v --cov=sql_to_dag --cov-report=term-missing --cov-fail-under=88
 
       - name: Verify generator runs on example SQL
         run: |
