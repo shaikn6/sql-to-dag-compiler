@@ -13,7 +13,7 @@ setup(
         "sql_to_dag": ["templates/*.j2"],
     },
     install_requires=[
-        "sqlparse==0.4.2",
+        "sqlparse==0.5.4",
         "Jinja2==3.1.6",
         "networkx==2.7.1",
     ],
