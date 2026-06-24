@@ -14,7 +14,7 @@ setup(
     },
     install_requires=[
         "sqlparse==0.4.2",
-        "Jinja2==3.0.3",
+        "Jinja2==3.1.6",
         "networkx==2.7.1",
     ],
     python_requires=">=3.9",
