@@ -1,5 +1,5 @@
 # sqlparse 0.4.2 is vulnerable to CVE-2023-30608 (ReDoS). Minimum safe: 0.4.4.
-sqlparse>=0.4.4
+sqlparse>=0.5.4
 # Jinja2 3.0.3 has known CVEs (CVE-2024-56201, CVE-2024-56326). Pin to latest.
 Jinja2>=3.1.6
 networkx>=2.7.1
