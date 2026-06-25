@@ -1,21 +1,14 @@
----
-
 # sql-to-dag-compiler
-
-![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
-![License](https://img.shields.io/badge/License-MIT-22c55e)
-![Tests](https://img.shields.io/badge/Tests-passing-22c55e)
-![Stack](https://img.shields.io/badge/Stack-sqlparse-6366f1)
-
 
 ![Python](https://img.shields.io/badge/python-3.9%2B-blue)
 ![Airflow](https://img.shields.io/badge/Apache%20Airflow-2.x-brightgreen)
 ![dbt](https://img.shields.io/badge/dbt-model%20generation-orange)
 ![pyvis](https://img.shields.io/badge/pyvis-interactive%20lineage-purple)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey)
-![Tests](https://img.shields.io/badge/tests-104%20passing-success)
 
-**V2: Oracle SQL / PLSQL → Apache Airflow 2.x DAGs + dbt model files + interactive lineage graph + column-level impact analysis.**
+**Compile Oracle SQL / PL/SQL stored procedures into production Airflow 2.x DAGs, dbt model files, an interactive column-level lineage graph, and what-if impact analysis — with task ordering derived from real table lineage, not manual annotation.**
+
+**Tech stack:** Python 3.9+, `sqlparse` (statement splitting), `networkx` (dependency DAG + topological sort), `Jinja2` (DAG/dbt codegen), `pyvis` (interactive lineage HTML), Streamlit (dashboard), pytest.
 
 ---
 
@@ -94,10 +87,10 @@ Built a three-stage pipeline in Python:
 
 ```mermaid
 flowchart LR
-    A[Oracle SQL / PLSQL File] --> B[parser.py\nsqlparse + regex]
-    B -->|list of statement dicts| C[graph.py\nnetworkx DiGraph]
-    C -->|topological order\n+ edge list| D[generator.py\nJinja2 renderer]
-    D --> E[Airflow 2.x\nDAG Python file]
+    A[Oracle SQL / PLSQL File] --> B["parser.py<br/>sqlparse + regex"]
+    B -->|list of statement dicts| C["graph.py<br/>networkx DiGraph"]
+    C -->|topological order + edge list| D["generator.py<br/>Jinja2 renderer"]
+    D --> E["Airflow 2.x<br/>DAG Python file"]
 
     style A fill:#f4a261,color:#000
     style E fill:#2a9d8f,color:#fff
@@ -107,8 +100,8 @@ flowchart LR
 
 ```mermaid
 graph LR
-    T1["create_customer_txn\nstaging.customer_txn"] --> T2["create_customer_summary\nmart.customer_summary"]
-    T2 --> T3["insert_high_value_customers\nmart.high_value_customers"]
+    T1["create_customer_txn<br/>staging.customer_txn"] --> T2["create_customer_summary<br/>mart.customer_summary"]
+    T2 --> T3["insert_high_value_customers<br/>mart.high_value_customers"]
 ```
 
 ### Result
@@ -282,6 +275,29 @@ Opens a 4-tab UI: DAG Preview / dbt Models / Lineage Explorer / Impact Analysis.
 
 See [docs/architecture.md](docs/architecture.md) for the full component breakdown.
 
+```mermaid
+flowchart TD
+    SQL["Oracle SQL / PL-SQL"] --> EC["src/edge_case_handler.py<br/>strip comments · detect CTEs,<br/>MERGE, dynamic SQL, windows"]
+    EC --> P["sql_to_dag/parser.py<br/>sqlparse split + regex<br/>target/source table extraction"]
+    P --> G["sql_to_dag/graph.py<br/>networkx DiGraph<br/>topological_sort · cycle check"]
+
+    G --> GEN["sql_to_dag/generator.py<br/>Jinja2 dag_template.py.j2"]
+    GEN --> AF["Airflow 2.x DAG (.py)<br/>PythonOperator + set_upstream"]
+
+    P --> DBT["dbt_compiler/dbt_generator.py<br/>CTEs → models + schema.yml + sources.yml"]
+
+    G --> LIN["lineage/<br/>column_tracer · impact_analyzer · viz_generator"]
+    LIN --> HTML["pyvis lineage.html<br/>+ blast-radius / what-if-rename"]
+
+    GEN --> DASH["dashboard/app_v2.py<br/>Streamlit: DAG / dbt / lineage / impact"]
+    DBT --> DASH
+    LIN --> DASH
+
+    style SQL fill:#f4a261,color:#000
+    style AF fill:#2a9d8f,color:#fff
+    style HTML fill:#6366f1,color:#fff
+```
+
 ```
 sql_to_dag/              # V1 — Oracle SQL → Airflow DAG
 ├── parser.py
@@ -315,11 +331,13 @@ pytest tests/test_parser.py tests/test_graph.py tests/test_generator.py -v
 pytest tests/test_v2_dbt_generator.py tests/test_v2_impact_analyzer.py \
        tests/test_v2_column_tracer.py tests/test_v2_viz_generator.py -v
 
-# All 104 tests
+# Full suite with coverage
 pytest tests/ -v --cov=sql_to_dag --cov=dbt_compiler --cov=lineage --cov-report=term-missing
 ```
 
-104 tests (74 V1 + 30 V2). All pass.
+The suite spans the V1 compiler (parser, graph, generator) and the V2 modules (dbt
+generator, impact analyzer, column tracer, viz generator). Run `pytest tests/` to execute
+the full set.
 
 ---
 
@@ -334,8 +352,6 @@ def execute_sql(task_id: str, **context) -> None:
     hook = RedshiftSQLHook(redshift_conn_id="redshift_default")
     hook.run(SQL_STATEMENTS[task_id])
 ```
-
----
 
 ---
 
@@ -441,7 +457,7 @@ json_dict   = generate_json(dag)      # {"nodes": [...], "edges": [...]}
 pytest tests/test_v2.py -v
 ```
 
-62 tests covering all V2 modules — all passing.
+`test_v2.py` covers the V2 `src/` modules (dbt parser, edge-case handler, lineage report).
 
 ---
 
