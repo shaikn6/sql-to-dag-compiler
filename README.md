@@ -63,7 +63,7 @@ streamlit run dashboard/app_v2.py    # launch dashboard
 
 ### Situation
 
-At a prior employer (2021–2022), the data engineering team was contracted to migrate a 25GB+ Oracle data warehouse to AWS Redshift for a financial services client. The warehouse contained 20+ stored procedures, each encapsulating multi-step ETL logic as sequential SQL statements with implicit dependencies between intermediate tables.
+In a prior enterprise data-engineering role (2021–2022), the team migrated a 25GB+ Oracle data warehouse to AWS Redshift for a financial services client. The warehouse contained 20+ stored procedures, each encapsulating multi-step ETL logic as sequential SQL statements with implicit dependencies between intermediate tables.
 
 Manual DAG rewriting required an engineer to read each stored procedure, mentally trace the table dependencies, hand-code each Airflow task, and wire the `set_upstream` calls correctly. This took **2–3 days per procedure**, was error-prone (mis-ordered tasks caused silent data corruption), and provided no audit trail of the dependency decisions.
 

@@ -1,7 +1,7 @@
 -- ============================================================
 -- procedure: load_customer_summary
 -- Source: Oracle Data Warehouse → AWS Redshift migration
--- Originally a PL/SQL stored procedure at a prior employer (2021-2022)
+-- Originally a PL/SQL stored procedure in a prior enterprise data-engineering project (2021-2022)
 -- ============================================================
 
 -- Step 1: Build staging aggregate from raw transaction data
